@@ -1,6 +1,8 @@
 import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
+import torch
+from sklearn.model_selection import train_test_split
 
 SEED = 1234
 NUM_SAMPLES = 50
@@ -81,7 +83,9 @@ y_test = standardize_data(y_test, y_mean, y_std)
 
 INPUT_DIM = x_train.shape[1]
 OUTPUT_DIM = y_train.shape[1]
-
+###########################################################################################
+###########################################################################################
+###########################################################################################
 W = 0.01 * np.random.randn(INPUT_DIM, OUTPUT_DIM)
 b = np.zeros((1, 1))
 
@@ -126,3 +130,41 @@ W_unscaled = W * (y_std / x_std)
 b_unscaled = b * y_std + y_mean - np.sum(W_unscaled * x_mean)
 print("[actual] y = 3.5X + noise")
 print(f"[model] y_hat = {W_unscaled[0][0]:.1f} X + {b_unscaled[0][0]:.1f}")
+
+###########################################################################################
+###########################################################################################
+###########################################################################################
+from torch import nn
+from torchsummary import summary
+
+torch.manual_seed(SEED)
+N = 3
+xx = torch.randn(N, INPUT_DIM)
+print(xx)
+
+m = nn.Linear(INPUT_DIM, OUTPUT_DIM)
+print(f"weights ({m.weight.shape}): {m.weight[0][0]}")
+print(f"bias ({m.bias.shape}): {m.bias[0]}")
+
+# Forward pass
+z = m(xx)
+z
+
+
+class LinearRegression(nn.Module):
+    def __init__(self, input_dim, output_dim):
+        super(LinearRegression, self).__init__()
+        self.fc1 = nn.Linear(input_dim, output_dim)
+
+    def forward(self, x_in):
+        y_pred = self.fc1(x_in)
+        return y_pred
+model = LinearRegression(input_dim=INPUT_DIM, output_dim=OUTPUT_DIM)
+print (model.named_parameters)
+summary(model, input_size=(INPUT_DIM,))
+
+loss_fn = nn.MSELoss()
+y_pred = torch.Tensor([0., 0., 1., 1.])
+y_true =  torch.Tensor([1., 1., 1., 0.])
+loss = loss_fn(y_pred, y_true)
+print('Loss: ', loss.numpy())
