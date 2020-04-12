@@ -3,6 +3,9 @@ import pandas as pd
 import matplotlib.pyplot as plt
 import torch
 from sklearn.model_selection import train_test_split
+from sklearn.preprocessing import StandardScaler
+from torch import nn
+from torch.optim import Adam
 
 SEED = 1234
 NUM_SAMPLES = 50
@@ -128,27 +131,50 @@ plt.show()
 # Unscaled weights
 W_unscaled = W * (y_std / x_std)
 b_unscaled = b * y_std + y_mean - np.sum(W_unscaled * x_mean)
-print("[actual] y = 3.5X + noise")
-print(f"[model] y_hat = {W_unscaled[0][0]:.1f} X + {b_unscaled[0][0]:.1f}")
+print("[actual] y = 3.5x + noise")
+print(f"[model] y_hat = {W_unscaled[0][0]:.1f} x + {b_unscaled[0][0]:.1f}")
 
 ###########################################################################################
 ###########################################################################################
 ###########################################################################################
-from torch import nn
-from torchsummary import summary
-
 torch.manual_seed(SEED)
-N = 3
-xx = torch.randn(N, INPUT_DIM)
-print(xx)
+TRAIN_SIZE = 0.7
+VAL_SIZE = 0.15
+TEST_SIZE = 0.15
+SHUFFLE = True
 
-m = nn.Linear(INPUT_DIM, OUTPUT_DIM)
-print(f"weights ({m.weight.shape}): {m.weight[0][0]}")
-print(f"bias ({m.bias.shape}): {m.bias[0]}")
 
-# Forward pass
-z = m(xx)
-z
+def train_val_test_split(x, y, val_size, test_size, shuffle):
+    """Split data into train/val/test datasets.
+    """
+    x_train, x_test, y_train, y_test = train_test_split(
+        x, y, test_size=test_size, shuffle=shuffle)
+    x_train, x_val, y_train, y_val = train_test_split(
+        x_train, y_train, test_size=val_size, shuffle=shuffle)
+    return x_train, x_val, x_test, y_train, y_val, y_test
+
+
+x_train, x_val, x_test, y_train, y_val, y_test = train_val_test_split(
+    x, y, val_size=VAL_SIZE, test_size=TEST_SIZE, shuffle=SHUFFLE)
+print(f"x_train: {x_train.shape}, y_train: {y_train.shape}")
+print(f"x_val: {x_val.shape}, y_test: {y_val.shape}")
+print(f"x_test: {x_test.shape}, y_test: {y_test.shape}")
+
+x_scaler = StandardScaler().fit(x_train)
+y_scaler = StandardScaler().fit(y_train)
+x_train = x_scaler.transform(x_train)
+y_train = y_scaler.transform(y_train).ravel().reshape(-1, 1)
+x_val = x_scaler.transform(x_val)
+y_val = y_scaler.transform(y_val).ravel().reshape(-1, 1)
+x_test = x_scaler.transform(x_test)
+y_test = y_scaler.transform(y_test).ravel().reshape(-1, 1)
+
+x_train = torch.Tensor(x_train)
+y_train = torch.Tensor(y_train)
+x_val = torch.Tensor(x_val)
+y_val = torch.Tensor(y_val)
+x_test = torch.Tensor(x_test)
+y_test = torch.Tensor(y_test)
 
 
 class LinearRegression(nn.Module):
@@ -159,12 +185,52 @@ class LinearRegression(nn.Module):
     def forward(self, x_in):
         y_pred = self.fc1(x_in)
         return y_pred
-model = LinearRegression(input_dim=INPUT_DIM, output_dim=OUTPUT_DIM)
-print (model.named_parameters)
-summary(model, input_size=(INPUT_DIM,))
 
+
+L2_LAMBDA = 1e-2
+model = LinearRegression(input_dim=INPUT_DIM, output_dim=OUTPUT_DIM)
 loss_fn = nn.MSELoss()
-y_pred = torch.Tensor([0., 0., 1., 1.])
-y_true =  torch.Tensor([1., 1., 1., 0.])
-loss = loss_fn(y_pred, y_true)
-print('Loss: ', loss.numpy())
+optimizer = Adam(model.parameters(), lr=LEARNING_RATE, weight_decay=L2_LAMBDA)
+
+for epoch in range(100):
+    y_pred = model(x_train)
+    loss = loss_fn(y_pred, y_train)
+    optimizer.zero_grad()
+    loss.backward()
+    optimizer.step()
+    if epoch % 20 == 0:
+        print(f"Epoch: {epoch} | loss: {loss:.2f}")
+
+pred_train = model(x_train)
+pred_test = model(x_test)
+train_error = loss_fn(pred_train, y_train)
+test_error = loss_fn(pred_test, y_test)
+print(f'train_error: {train_error:.2f}')
+print(f'test_error: {test_error:.2f}')
+
+# Figure size
+plt.figure(figsize=(15, 5))
+
+# Plot train data
+plt.subplot(1, 2, 1)
+plt.title("Train")
+plt.scatter(x_train, y_train, label='y_train')
+plt.plot(x_train, pred_train.detach().numpy(), color='red', linewidth=1, linestyle='-', label='model')
+plt.legend(loc='lower right')
+
+# Plot test data
+plt.subplot(1, 2, 2)
+plt.title("Test")
+plt.scatter(x_test, y_test, label='y_test')
+plt.plot(x_test, pred_test.detach().numpy(), color='red', linewidth=1, linestyle='-', label='model')
+plt.legend(loc='lower right')
+
+# Show plots
+plt.show()
+
+sample_indices = [10, 15, 25]
+x_infer = np.array(sample_indices, dtype=np.float32)
+x_infer = torch.Tensor(x_scaler.transform(x_infer.reshape(-1, 1)))
+pred_infer = model(x_infer).detach().numpy() * np.sqrt(y_scaler.var_) + y_scaler.mean_
+for i, index in enumerate(sample_indices):
+    print(f"{df.iloc[index]['y']:.2f} (actual) → {pred_infer[i][0]:.2f} (predicted)")
